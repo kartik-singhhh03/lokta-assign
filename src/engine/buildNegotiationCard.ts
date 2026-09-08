@@ -153,7 +153,7 @@ export function buildNegotiationCard(params: {
     explanation: {
       label: 'Your borrower card',
       summary: dontBorrow
-        ? 'DO NOT TAKE A NEW LOAN AT THIS TIME'
+        ? "Don't borrow right now"
         : `Negotiation anchors: rate ≤ ${formatPercentPoints(negotiationTarget)}, EMI ≤ ${formatInr(affordability.safeNewEmi)}.`,
       text: confidenceReason,
       factors: whyReasons,

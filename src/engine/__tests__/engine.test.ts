@@ -129,8 +129,9 @@ describe('demo borrowers', () => {
     expect(result.safeAmount.mathematicalMaximum!).toBeGreaterThan(
       result.safeAmount.safeAmountRange.high!,
     )
-    expect(result.oneLiners.decision.toLowerCase()).toMatch(
-      /within your estimated safe range|lender may offer more/,
+    expect(result.borrowDecision.explanation.summary).toBe('Borrow')
+    expect(result.borrowDecision.explanation.text.toLowerCase()).toMatch(
+      /affordability rules|lender may offer more/,
     )
   })
 

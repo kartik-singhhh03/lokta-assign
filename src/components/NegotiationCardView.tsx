@@ -49,7 +49,7 @@ export function NegotiationCardView({ card }: NegotiationCardViewProps) {
       {dontBorrow ? (
         <div className="mt-6 border-y border-[var(--line)] py-5">
           <p className="font-[family-name:var(--font-display)] text-xl text-[var(--danger)]">
-            Do not take a new loan at this time
+            Don't borrow right now
           </p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
             Reassess after your existing high-cost debt is under control and

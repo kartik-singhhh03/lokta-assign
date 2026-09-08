@@ -145,8 +145,7 @@ export function evaluateBorrower(params: {
       riskFactors: risks,
       nextSteps,
       explanation: {
-        summary:
-          'Don’t borrow right now — repayment capacity is too fragile for new debt.',
+        summary: "Don't borrow right now",
         text: buildDontBorrowText(profile, affordability, risks),
         factors: [...risks, ...positive],
       },
@@ -177,7 +176,7 @@ export function evaluateBorrower(params: {
       riskFactors: risks,
       nextSteps,
       explanation: {
-        summary: `Borrow less — you can afford some debt, but ${formatInr(requested)} is above your safe range.`,
+        summary: 'Borrow less',
         text: buildBorrowLessText(profile, safeLow, safeHigh, recommended, lenderHigh),
         factors: [...risks, ...positive],
       },
@@ -192,9 +191,8 @@ export function evaluateBorrower(params: {
       riskFactors: [...risks, 'Incomplete inputs for a clear BORROW decision'],
       nextSteps: ['Complete income, EMI and expense details to refine this assessment.'],
       explanation: {
-        summary:
-          'Borrow cautiously / less — key inputs are incomplete, so we will not green-light the full request.',
-        text: 'Missing income, EMI, or request details prevent a confident BORROW recommendation. Unknowns stay unknown; we do not invent capacity.',
+        summary: 'Borrow less',
+        text: 'You may be able to borrow, but key inputs are incomplete, so we will not green-light the full request. Unknowns stay unknown; we do not invent capacity.',
         factors: [...risks, ...positive],
         missingInputs: ['complete affordability inputs'],
       },
@@ -212,8 +210,8 @@ export function evaluateBorrower(params: {
       'Do not accept a larger sanctioned amount just because it is offered.',
     ],
     explanation: {
-      summary: `Your requested ${formatInr(requested)} is within your estimated safe range, but the lender may offer more than you should accept.`,
-      text: `Requested ${formatInr(requested)} sits within your comfortable safe borrower range of ${formatInr(safeLow)} – ${formatInr(safeHigh)}. Repayment capacity looks healthy under our affordability rules. Estimated lender range is calculated separately and is not a reason to borrow more.`,
+      summary: 'Borrow',
+      text: `You appear able to carry the requested borrowing within our affordability rules. Requested ${formatInr(requested)} sits within your comfortable safe borrower range of ${formatInr(safeLow)} – ${formatInr(safeHigh)}. A lender may offer more than you should borrow.`,
       factors: [...positive, ...risks],
     },
   }
@@ -224,17 +222,15 @@ function buildDontBorrowText(
   affordability: AffordabilityResult,
   risks: string[],
 ): string {
-  const parts: string[] = []
+  const parts: string[] = [
+    'Your current repayment position does not leave enough safe headroom for a new loan.',
+  ]
   if (
     profile.outstandingUnsecuredDebt !== null &&
     profile.recentBouncedEmi === true
   ) {
     parts.push(
-      `We recommend no new EMI because you have ${formatInr(profile.outstandingUnsecuredDebt)} of high-cost app-loan debt and a recent bounced EMI, so we cannot treat your current debt burden as safely serviceable for a new loan.`,
-    )
-  } else {
-    parts.push(
-      'We recommend no new EMI because your current debt position and repayment stress leave too little headroom.',
+      `You have ${formatInr(profile.outstandingUnsecuredDebt)} of high-cost app-loan debt and a recent bounced EMI, so we cannot treat your current debt burden as safely serviceable for a new loan.`,
     )
   }
   if (profile.loanPurpose === 'scooter' || profile.loanPurpose === 'vehicle') {
@@ -259,6 +255,7 @@ function buildBorrowLessText(
   lenderHigh: number | null,
 ): string {
   const parts = [
+    'You may be able to borrow, but the amount you requested is above the amount we consider comfortable.',
     `Your safe borrower range is about ${formatInr(safeLow)} – ${formatInr(safeHigh)}.`,
   ]
   if (
@@ -272,7 +269,7 @@ function buildBorrowLessText(
     )
   }
   parts.push(
-    `Consider sizing closer to ${formatInr(recommended)}. The estimated lender range is not a safe-borrowing target.`,
+    `Consider sizing closer to ${formatInr(recommended)}. A lender may offer more than you should borrow.`,
   )
   return parts.join(' ')
 }

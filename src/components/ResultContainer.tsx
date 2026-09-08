@@ -17,11 +17,11 @@ interface ResultContainerProps {
 function decisionLabel(code: BorrowRecommendation): string {
   switch (code) {
     case 'BORROW':
-      return 'BORROW'
+      return 'Borrow'
     case 'BORROW_LESS':
-      return 'BORROW LESS'
+      return 'Borrow less'
     case 'DONT_BORROW':
-      return "DON'T BORROW"
+      return "Don't borrow right now"
   }
 }
 
@@ -78,6 +78,7 @@ export function ResultContainer({
         </button>
       </header>
 
+      {/* 1. DECISION */}
       <div className="animate-rise print:hidden">
         <p className="text-xs tracking-[0.12em] text-[var(--muted)] uppercase">
           Self-assessment · not a lender decision
@@ -88,7 +89,7 @@ export function ResultContainer({
           {decisionLabel(decision)}
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-[var(--ink-soft)]">
-          {result.oneLiners.decision}
+          {result.borrowDecision.explanation.text}
         </p>
         <p className="mt-3 text-xs text-[var(--muted)]">
           Confidence:{' '}
@@ -98,46 +99,43 @@ export function ResultContainer({
           {' — '}
           {result.confidenceReason}
         </p>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Product route: {result.product.product.replaceAll('_', ' ')}
+        </p>
+        {result.borrowDecision.positiveFactors.length > 0 ||
+        result.borrowDecision.riskFactors.length > 0 ||
+        result.borrowDecision.nextSteps.length > 0 ? (
+          <div className="mt-5 space-y-3">
+            {result.borrowDecision.positiveFactors.length > 0 ? (
+              <FactorList
+                label="Supportive"
+                items={result.borrowDecision.positiveFactors}
+              />
+            ) : null}
+            {result.borrowDecision.riskFactors.length > 0 ? (
+              <FactorList
+                label="Watch"
+                items={result.borrowDecision.riskFactors}
+              />
+            ) : null}
+            {result.borrowDecision.nextSteps.length > 0 ? (
+              <FactorList
+                label="Next steps"
+                items={result.borrowDecision.nextSteps}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="animate-rise-delay-1 mt-8 space-y-8 print:hidden">
-        <ResultCard title="1. Should you borrow?">
-          <p className={`text-lg font-medium ${decisionTone(decision)}`}>
-            {decisionLabel(decision)}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
-            {result.borrowDecision.explanation.text}
-          </p>
-          {result.borrowDecision.positiveFactors.length > 0 ? (
-            <FactorList
-              label="Supportive"
-              items={result.borrowDecision.positiveFactors}
-            />
-          ) : null}
-          {result.borrowDecision.riskFactors.length > 0 ? (
-            <FactorList label="Watch" items={result.borrowDecision.riskFactors} />
-          ) : null}
-          {result.borrowDecision.nextSteps.length > 0 ? (
-            <FactorList
-              label="Constructive next steps"
-              items={result.borrowDecision.nextSteps}
-            />
-          ) : null}
-        </ResultCard>
-
-        <ResultCard title="2. How much?">
-          <Metric
-            label="Estimated lender range"
-            value={formatInrRange(
-              result.capacity.likelySanction.low,
-              result.capacity.likelySanction.high,
-            )}
-          />
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            This is an indicative estimate, not a lender approval or guarantee.
+        {/* 2. SAFE BORROWING AMOUNT */}
+        <ResultCard title="2. Safe borrowing amount">
+          <p className="text-xs tracking-[0.1em] text-[var(--muted)] uppercase">
+            What you should carry
           </p>
           <Metric
-            label="Safe borrower range (comfortable)"
+            label="Safe borrower range"
             value={formatInrRange(
               result.capacity.safeCarry.low,
               result.capacity.safeCarry.high,
@@ -153,23 +151,40 @@ export function ResultContainer({
               value={formatInr(result.safeAmount.mathematicalMaximum)}
             />
           ) : null}
-          <p className="mt-4 border-l-2 border-[var(--teal)] pl-3 text-sm leading-relaxed text-[var(--ink-soft)]">
-            {result.oneLiners.lenderVsSafe}
+          <p className="mt-3 text-sm leading-relaxed text-[var(--ink-soft)]">
+            {result.oneLiners.safeAmount}
           </p>
           <WhyThisNumber breakdown={result.safeAmount.breakdown} />
-          <WhyThisNumber breakdown={result.lenderAmount.breakdown} />
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            Product route: {result.product.product.replaceAll('_', ' ')} —{' '}
-            {result.product.explanation.summary}
-          </p>
         </ResultCard>
 
-        <ResultCard title="3. Fair rate">
+        {/* 3. ESTIMATED LENDER RANGE */}
+        <ResultCard title="3. Estimated lender range">
+          <p className="text-xs tracking-[0.1em] text-[var(--muted)] uppercase">
+            What a lender may offer
+          </p>
+          <Metric
+            label="Estimated lender range"
+            value={formatInrRange(
+              result.capacity.likelySanction.low,
+              result.capacity.likelySanction.high,
+            )}
+          />
+          <p className="mt-3 border-l-2 border-[var(--teal)] pl-3 text-sm leading-relaxed text-[var(--ink-soft)]">
+            A lender may offer more than you should borrow.
+          </p>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            This is an indicative estimate, not a lender approval or guarantee.
+          </p>
+          <WhyThisNumber breakdown={result.lenderAmount.breakdown} />
+        </ResultCard>
+
+        {/* 4. FAIR RATE + APR */}
+        <ResultCard title="4. Fair rate + APR">
           <Metric
             label={
               result.fairRate.indicativeOnly
-                ? 'Indicative fair rate (low confidence band)'
-                : 'Indicative fair rate'
+                ? 'Indicative fair rate'
+                : 'Fair rate'
             }
             value={`${formatPercentPoints(result.fairRate.low)} – ${formatPercentPoints(result.fairRate.high)}`}
           />
@@ -190,17 +205,16 @@ export function ResultContainer({
             label="Total repayment"
             value={formatInr(result.apr.totalRepayment)}
           />
-          <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-            {result.oneLiners.rate}
-          </p>
+          <p className="mt-3 text-sm text-[var(--muted)]">{result.oneLiners.rate}</p>
           <p className="mt-1 text-sm text-[var(--muted)]">{result.oneLiners.apr}</p>
           <WhyThisNumber breakdown={result.fairRate.breakdown} />
           <WhyThisNumber breakdown={result.apr.breakdown} />
         </ResultCard>
 
-        <ResultCard title="4. EMI">
+        {/* 5. EMI CEILING */}
+        <ResultCard title="5. EMI ceiling">
           <Metric
-            label="Recommended EMI ceiling"
+            label="Safe new EMI ceiling"
             value={`${formatInr(result.emiGuidance.safeNewEmiCeiling)} / month`}
           />
           <Metric
@@ -248,7 +262,8 @@ export function ResultContainer({
           ) : null}
         </ResultCard>
 
-        <ResultCard title="Stress test">
+        {/* 6. STRESS TEST */}
+        <ResultCard title="6. Stress test">
           <p className="text-sm font-medium text-[var(--ink)]">
             {result.stress.scenarioLabel}
           </p>
@@ -260,7 +275,8 @@ export function ResultContainer({
           </p>
         </ResultCard>
 
-        <ResultCard title="Why this result?">
+        {/* 7. WHY THIS RESULT */}
+        <ResultCard title="7. Why this result?">
           <ol className="list-decimal space-y-2 pl-4 text-sm leading-relaxed text-[var(--ink-soft)]">
             {result.reasons.map((reason) => (
               <li key={reason}>{reason}</li>
@@ -268,7 +284,8 @@ export function ResultContainer({
           </ol>
         </ResultCard>
 
-        <ResultCard title="What we don’t know">
+        {/* 8. WHAT WE DON'T KNOW */}
+        <ResultCard title="8. What we don’t know">
           <ul className="space-y-2 text-sm text-[var(--ink-soft)]">
             {result.whatWeDontKnow.map((item) => (
               <li key={item} className="flex gap-2">
@@ -282,7 +299,11 @@ export function ResultContainer({
         </ResultCard>
       </div>
 
+      {/* 9. NEGOTIATION CARD */}
       <div className="animate-rise-delay-2 mt-10 print:mt-0">
+        <p className="mb-3 text-xs tracking-[0.12em] text-[var(--muted)] uppercase print:hidden">
+          9. Negotiation card
+        </p>
         <NegotiationCardView card={result.negotiation} />
       </div>
 
@@ -330,8 +351,8 @@ function ResultCard({
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-[var(--line)] py-2 text-sm last:border-b-0">
-      <span className="text-[var(--muted)]">{label}</span>
-      <span className="text-right font-medium tabular-nums text-[var(--ink)]">
+      <span className="min-w-0 shrink text-[var(--muted)]">{label}</span>
+      <span className="max-w-[55%] break-words text-right font-medium tabular-nums text-[var(--ink)]">
         {value}
       </span>
     </div>

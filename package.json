@@ -1,8 +1,9 @@
 {
-  "name": "lokta-assign",
+  "name": "borrower-copilot",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "Lokta take-home: borrower self-assessment for India (React + TypeScript + Vite)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
