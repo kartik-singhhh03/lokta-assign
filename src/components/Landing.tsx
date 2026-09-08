@@ -1,8 +1,9 @@
 interface LandingProps {
   onStart: () => void
+  onLoadDemo: (key: 'priya' | 'ravi' | 'anita') => void
 }
 
-export function Landing({ onStart }: LandingProps) {
+export function Landing({ onStart, onLoadDemo }: LandingProps) {
   return (
     <section className="relative flex min-h-[100svh] flex-col px-5 pb-10 pt-8 sm:px-8">
       <header className="animate-fade mx-auto flex w-full max-w-lg items-center justify-between">
@@ -36,9 +37,33 @@ export function Landing({ onStart }: LandingProps) {
             Private · runs entirely on your device
           </p>
         </div>
+
+        <div className="animate-rise-delay-3 mt-10 border-t border-[var(--line)] pt-6">
+          <p className="text-xs tracking-[0.12em] text-[var(--muted)] uppercase">
+            Try a demo profile
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(
+              [
+                { key: 'priya' as const, label: 'Priya · salaried' },
+                { key: 'ravi' as const, label: 'Ravi · business' },
+                { key: 'anita' as const, label: 'Anita · stressed' },
+              ] as const
+            ).map((demo) => (
+              <button
+                key={demo.key}
+                type="button"
+                onClick={() => onLoadDemo(demo.key)}
+                className="rounded-md border border-[var(--line)] bg-white/70 px-3 py-2 text-xs font-medium text-[var(--ink-soft)] transition hover:border-[var(--teal)] hover:text-[var(--ink)]"
+              >
+                {demo.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <footer className="animate-rise-delay-3 mx-auto w-full max-w-lg border-t border-[var(--line)] pt-6">
+      <footer className="animate-fade mx-auto w-full max-w-lg border-t border-[var(--line)] pt-6">
         <ul className="grid gap-3 text-sm text-[var(--muted)] sm:grid-cols-2">
           <li>Should I borrow at all?</li>
           <li>Sanction vs safe carry</li>

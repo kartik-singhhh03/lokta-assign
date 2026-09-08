@@ -1,26 +1,50 @@
-import type { Answer } from '../types'
-import { isEngineReady } from '../engine'
-import { formatInr } from '../utils'
+import type { ReactNode } from 'react'
+import type { AssessmentResult, BorrowRecommendation } from '../types'
+import {
+  formatInr,
+  formatInrRange,
+  formatPercentPoints,
+} from '../utils'
+import { NegotiationCardView } from './NegotiationCardView'
 
 interface ResultContainerProps {
-  answers: Answer[]
+  result: AssessmentResult
   onRestart: () => void
   onEditAnswers: () => void
 }
 
-/** Placeholder result shell — engine rules are not wired yet. */
+function decisionLabel(code: BorrowRecommendation): string {
+  switch (code) {
+    case 'BORROW':
+      return 'BORROW'
+    case 'BORROW_LESS':
+      return 'BORROW LESS'
+    case 'DONT_BORROW':
+      return "DON'T BORROW"
+  }
+}
+
+function decisionTone(code: BorrowRecommendation): string {
+  switch (code) {
+    case 'BORROW':
+      return 'text-[var(--ok)]'
+    case 'BORROW_LESS':
+      return 'text-[var(--amber)]'
+    case 'DONT_BORROW':
+      return 'text-[var(--danger)]'
+  }
+}
+
 export function ResultContainer({
-  answers,
+  result,
   onRestart,
   onEditAnswers,
 }: ResultContainerProps) {
-  const knownCount = answers.filter((a) => a.value !== null).length
-  const unknownCount = answers.length - knownCount
-  const engineReady = isEngineReady()
+  const decision = result.borrowDecision.recommendation
 
   return (
-    <section className="mx-auto flex min-h-[100svh] w-full max-w-lg flex-col px-5 pb-12 pt-6 sm:px-8">
-      <header className="mb-8 flex items-center justify-between">
+    <section className="mx-auto flex min-h-[100svh] w-full max-w-lg flex-col px-5 pb-16 pt-6 sm:px-8 print:max-w-none print:px-0">
+      <header className="mb-8 flex items-center justify-between print:hidden">
         <button
           type="button"
           onClick={onEditAnswers}
@@ -40,58 +64,196 @@ export function ResultContainer({
         </button>
       </header>
 
-      <div className="animate-rise">
+      <div className="animate-rise print:hidden">
         <p className="text-xs tracking-[0.12em] text-[var(--muted)] uppercase">
-          Assessment captured
+          Self-assessment · not a lender decision
         </p>
-        <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight text-[var(--ink)]">
-          Results will appear here
+        <h1
+          className={`mt-3 font-[family-name:var(--font-display)] text-3xl leading-tight tracking-tight sm:text-4xl ${decisionTone(decision)}`}
+        >
+          {decisionLabel(decision)}
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-[var(--ink-soft)]">
-          Your answers are ready. The calculation engine is intentionally not
-          connected yet, so we will not invent figures or treat unknowns as{' '}
-          {formatInr(0)}.
+          {result.borrowDecision.explanation.summary}
+        </p>
+        <p className="mt-3 text-xs text-[var(--muted)]">
+          Confidence:{' '}
+          <span className="font-medium text-[var(--ink)] uppercase">
+            {result.overallConfidence}
+          </span>
+          {' — '}
+          {result.confidenceReason}
         </p>
       </div>
 
-      <div className="animate-rise-delay-1 mt-8 space-y-3 border-y border-[var(--line)] py-6">
-        <ResultRow label="Answers recorded" value={String(answers.length)} />
-        <ResultRow label="Known values" value={String(knownCount)} />
-        <ResultRow label="Left unknown" value={String(unknownCount)} />
-        <ResultRow
-          label="Engine status"
-          value={engineReady ? 'Ready' : 'Stub — pending rules'}
-        />
+      <div className="animate-rise-delay-1 mt-8 space-y-8 print:hidden">
+        <ResultCard title="1. Should you borrow?">
+          <p className={`text-lg font-medium ${decisionTone(decision)}`}>
+            {decisionLabel(decision)}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
+            {result.borrowDecision.explanation.text}
+          </p>
+          {result.borrowDecision.positiveFactors.length > 0 ? (
+            <FactorList
+              label="Supportive"
+              items={result.borrowDecision.positiveFactors}
+            />
+          ) : null}
+          {result.borrowDecision.riskFactors.length > 0 ? (
+            <FactorList
+              label="Watch"
+              items={result.borrowDecision.riskFactors}
+            />
+          ) : null}
+        </ResultCard>
+
+        <ResultCard title="2. How much?">
+          <Metric
+            label="Estimated lender range"
+            value={formatInrRange(
+              result.capacity.likelySanction.low,
+              result.capacity.likelySanction.high,
+            )}
+          />
+          <Metric
+            label="Safe borrower range"
+            value={formatInrRange(
+              result.capacity.safeCarry.low,
+              result.capacity.safeCarry.high,
+            )}
+          />
+          <Metric
+            label="Recommended amount"
+            value={formatInr(result.capacity.recommendedAmount)}
+          />
+          <p className="mt-4 border-l-2 border-[var(--teal)] pl-3 text-sm leading-relaxed text-[var(--ink-soft)]">
+            The amount a lender may sanction is not necessarily the amount you
+            should borrow.
+          </p>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Product route: {result.product.product.replaceAll('_', ' ')} —{' '}
+            {result.product.explanation.summary}
+          </p>
+        </ResultCard>
+
+        <ResultCard title="3. Fair rate">
+          <Metric
+            label="Indicative fair rate"
+            value={`${formatPercentPoints(result.fairRate.low)} – ${formatPercentPoints(result.fairRate.high)}`}
+          />
+          <Metric
+            label="Expected"
+            value={formatPercentPoints(result.fairRate.expected)}
+          />
+          <Metric label="All-in APR" value={formatPercentPoints(result.apr.apr)} />
+          <Metric
+            label="Illustrative processing fee"
+            value={`${formatPercentPoints(result.apr.processingFeePercent)} (${formatInr(result.apr.processingFeeAmount)})`}
+          />
+          <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+            {result.fairRate.explanation.text}
+          </p>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            {result.apr.explanation.summary}
+          </p>
+        </ResultCard>
+
+        <ResultCard title="4. EMI">
+          <Metric
+            label="Recommended EMI ceiling"
+            value={`${formatInr(result.emiGuidance.safeNewEmiCeiling)} / month`}
+          />
+          <Metric
+            label="Suggested tenure"
+            value={
+              result.emiGuidance.suggestedTenureMonths !== null
+                ? `${result.emiGuidance.suggestedTenureMonths} months`
+                : '—'
+            }
+          />
+          <p className="mt-3 text-sm text-[var(--ink-soft)]">
+            {result.emiGuidance.explanation.text}
+          </p>
+          {result.emiGuidance.tenureTradeoffs.length > 0 ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[280px] text-left text-xs">
+                <thead>
+                  <tr className="text-[var(--muted)]">
+                    <th className="py-1 font-medium">Tenure</th>
+                    <th className="py-1 font-medium">EMI</th>
+                    <th className="py-1 font-medium">Total interest</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.emiGuidance.tenureTradeoffs.map((row) => (
+                    <tr
+                      key={row.tenureMonths}
+                      className="border-t border-[var(--line)]"
+                    >
+                      <td className="py-2 tabular-nums">
+                        {row.tenureMonths} mo
+                      </td>
+                      <td className="py-2 tabular-nums">
+                        {formatInr(row.emi)}
+                      </td>
+                      <td className="py-2 tabular-nums">
+                        {formatInr(row.totalInterest)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Shorter tenure → higher EMI, lower total interest. Longer tenure
+                → lower EMI, higher total interest.
+              </p>
+            </div>
+          ) : null}
+        </ResultCard>
+
+        <ResultCard title="Stress test">
+          <p className="text-sm font-medium text-[var(--ink)]">
+            {result.stress.scenarioLabel}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
+            {result.stress.explanation.text}
+          </p>
+        </ResultCard>
+
+        <ResultCard title="Why this result?">
+          <ol className="list-decimal space-y-2 pl-4 text-sm leading-relaxed text-[var(--ink-soft)]">
+            {result.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ol>
+        </ResultCard>
+
+        {result.missingInputsForPrecision.length > 0 ? (
+          <ResultCard title="What would make this estimate more precise?">
+            <ul className="space-y-2 text-sm text-[var(--ink-soft)]">
+              {result.missingInputsForPrecision.map((item) => (
+                <li key={item} className="flex gap-2">
+                  <span className="text-[var(--teal)]" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </ResultCard>
+        ) : null}
       </div>
 
-      <div className="animate-rise-delay-2 mt-8 space-y-6">
-        <OutcomeSlot
-          title="1. Should I borrow?"
-          body="Borrow / caution / avoid — with an explainable rationale."
-        />
-        <OutcomeSlot
-          title="2. Sanction vs safe carry"
-          body="Likely lender sanction range beside the amount you can safely service."
-        />
-        <OutcomeSlot
-          title="3. Fair rate & all-in APR"
-          body="A confidence-aware interest band. Missing credit data widens the range."
-        />
-        <OutcomeSlot
-          title="4. EMI to agree to"
-          body="Recommended EMI band in ₹, never forced to zero when inputs are missing."
-        />
-        <OutcomeSlot
-          title="Negotiation Card"
-          body="Talking points, max acceptable EMI, and watchouts for the lender conversation."
-        />
+      <div className="animate-rise-delay-2 mt-10 print:mt-0">
+        <NegotiationCardView card={result.negotiation} />
       </div>
 
-      <div className="animate-rise-delay-3 mt-10 flex flex-col gap-3">
+      <div className="mt-10 flex flex-col gap-3 print:hidden">
         <button
           type="button"
           onClick={onEditAnswers}
-          className="inline-flex items-center justify-center rounded-md bg-[var(--teal)] px-6 py-3.5 text-sm font-medium text-white transition hover:bg-[var(--teal-deep)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
+          className="inline-flex items-center justify-center rounded-md bg-[var(--teal)] px-6 py-3.5 text-sm font-medium text-white transition hover:bg-[var(--teal-deep)]"
         >
           Refine answers
         </button>
@@ -107,22 +269,45 @@ export function ResultContainer({
   )
 }
 
-function ResultRow({ label, value }: { label: string; value: string }) {
+function ResultCard({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
   return (
-    <div className="flex items-baseline justify-between gap-4 text-sm">
+    <section className="border-t border-[var(--line)] pt-6">
+      <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
+        {title}
+      </h2>
+      <div className="mt-3">{children}</div>
+    </section>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-[var(--line)] py-2 text-sm last:border-b-0">
       <span className="text-[var(--muted)]">{label}</span>
-      <span className="font-medium tabular-nums text-[var(--ink)]">{value}</span>
+      <span className="text-right font-medium tabular-nums text-[var(--ink)]">
+        {value}
+      </span>
     </div>
   )
 }
 
-function OutcomeSlot({ title, body }: { title: string; body: string }) {
+function FactorList({ label, items }: { label: string; items: string[] }) {
   return (
-    <div>
-      <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-        {title}
-      </h2>
-      <p className="mt-1.5 text-sm leading-relaxed text-[var(--muted)]">{body}</p>
+    <div className="mt-4">
+      <p className="text-xs tracking-[0.1em] text-[var(--muted)] uppercase">
+        {label}
+      </p>
+      <ul className="mt-2 space-y-1 text-sm text-[var(--ink-soft)]">
+        {items.map((item) => (
+          <li key={item}>· {item}</li>
+        ))}
+      </ul>
     </div>
   )
 }

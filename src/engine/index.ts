@@ -1,43 +1,20 @@
-import type {
-  Answer,
-  AssessmentResult,
-  BorrowerProfile,
-  Question,
-} from '../types'
+import type { AssessmentResult, BorrowerProfile } from '../types'
+import { assessBorrower } from './assessBorrower'
 
-/**
- * Assessment engine entry points.
- * Rules live here — UI must not embed calculation logic.
- *
- * Implementations are intentionally stubs until the rule engine is built.
- * Callers should treat null / empty results as "not yet computed".
- */
+export { assessBorrower, isEngineReady } from './assessBorrower'
+export { answersToProfile, emptyProfile } from './answersToProfile'
+export { calculateEmi, calculateSupportedPrincipal } from './calculateEmi'
+export { calculateApr } from './calculateApr'
+export { calculateAffordability } from './calculateAffordability'
+export { determineProduct } from './determineProduct'
+export { calculateLenderAmount } from './calculateLenderAmount'
+export { calculateLoanAmount } from './calculateLoanAmount'
+export { calculateRate } from './calculateRate'
+export { calculateStress } from './calculateStress'
+export { evaluateBorrower } from './evaluateBorrower'
+export { RULES_META } from './rules'
 
-export class EngineNotImplementedError extends Error {
-  constructor(method: string) {
-    super(
-      `Assessment engine method "${method}" is not implemented yet. Rules are separated from UI and will be added next.`,
-    )
-    this.name = 'EngineNotImplementedError'
-  }
-}
-
-/** Build a partial BorrowerProfile from answered questions. Unknown stays null. */
-export function answersToProfile(
-  _questions: Question[],
-  _answers: Answer[],
-): BorrowerProfile {
-  throw new EngineNotImplementedError('answersToProfile')
-}
-
-/**
- * Run the full deterministic assessment.
- * Must never invent zeros for missing inputs.
- */
-export function runAssessment(_profile: BorrowerProfile): AssessmentResult {
-  throw new EngineNotImplementedError('runAssessment')
-}
-
-export function isEngineReady(): boolean {
-  return false
+/** Alias kept for earlier shell wiring. */
+export function runAssessment(profile: BorrowerProfile): AssessmentResult {
+  return assessBorrower(profile)
 }
