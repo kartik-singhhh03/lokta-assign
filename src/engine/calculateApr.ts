@@ -84,6 +84,14 @@ export function calculateApr(params: {
     methodNote:
       'Effective annual APR from cash-flow IRR when inputs are complete; otherwise unknown.',
     explanation,
+    breakdown: {
+      title: 'Why this APR?',
+      oneLiner: explanation.summary,
+      inputsUsed: [],
+      steps: explanation.factors,
+      ruleUsed: 'Cash-flow IRR APR',
+      assumptions: [FEE_RULES.feeDisclaimer],
+    },
   })
 
   if (
@@ -143,14 +151,34 @@ export function calculateApr(params: {
       'APR = effective annual rate from monthly IRR on cash flows (+net disbursal, −EMI × n). Not headline + fee%.',
     explanation: {
       label: 'Interest rate vs APR',
-      summary: `Headline ${formatPercentPoints(params.annualRatePercent)} becomes about ${formatPercentPoints(apr)} all-in APR after an illustrative ${formatPercentPoints(feePercent)} processing fee.`,
-      text: `On ${formatInr(params.principal)}, an illustrative ${formatPercentPoints(feePercent)} fee is ${formatInr(processingFeeAmount)}. You would receive about ${formatInr(netDisbursal)} but repay EMIs on the full principal. APR annualises that cash-flow difference — it is not simply headline rate + fee%. ${FEE_RULES.feeDisclaimer}`,
+      summary: `APR is higher than the headline rate because the calculation includes the illustrative processing fee.`,
+      text: `Headline ${formatPercentPoints(params.annualRatePercent)} → all-in APR ~${formatPercentPoints(apr)}. On ${formatInr(params.principal)}, an illustrative ${formatPercentPoints(feePercent)} fee is ${formatInr(processingFeeAmount)}. Net received ~${formatInr(netDisbursal)}; total repayment ~${formatInr(totalRepayment)}. ${FEE_RULES.feeDisclaimer}`,
       factors: [
         `Headline rate ${formatPercentPoints(params.annualRatePercent)}`,
         `Illustrative processing fee ${formatPercentPoints(feePercent)} → ${formatInr(processingFeeAmount)}`,
         `Net disbursal ${formatInr(netDisbursal)}`,
         `Total repayment ${formatInr(totalRepayment)}`,
+        `APR ${formatPercentPoints(apr)}`,
       ],
+    },
+    breakdown: {
+      title: 'Why this APR?',
+      oneLiner:
+        'APR is higher than the headline rate because the calculation includes the illustrative processing fee.',
+      inputsUsed: [
+        `Principal ${formatInr(params.principal)}`,
+        `Headline ${formatPercentPoints(params.annualRatePercent)}`,
+        `Tenure ${params.tenureMonths} months`,
+        `Illustrative fee ${formatPercentPoints(feePercent)}`,
+      ],
+      steps: [
+        `Fee amount = ${formatInr(processingFeeAmount)}`,
+        `Net disbursal = ${formatInr(netDisbursal)}`,
+        `EMI schedule on full principal`,
+        `Solve monthly IRR on cash flows, annualise to APR ${formatPercentPoints(apr)}`,
+      ],
+      ruleUsed: 'Cash-flow effective annual rate (not headline + fee%)',
+      assumptions: [FEE_RULES.feeDisclaimer],
     },
   }
 }

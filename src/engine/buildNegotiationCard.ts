@@ -42,18 +42,28 @@ export function buildNegotiationCard(params: {
     confidenceReason,
   } = params
 
-  const questions = [
-    ...LENDER_QUESTIONS.common,
-    ...(product === 'SECURED_BUSINESS' || product === 'HOME'
-      ? LENDER_QUESTIONS.secured
-      : []),
-    ...(product === 'VEHICLE' ? LENDER_QUESTIONS.vehicle : []),
-  ].slice(0, 6)
+  const dontBorrow = decision.recommendation === 'DONT_BORROW'
+  const rateIndicativeOnly = fairRate.indicativeOnly || confidence !== 'high'
 
-  const negotiationTarget =
-    fairRate.low !== null &&
-    fairRate.high !== null &&
-    fairRate.expected !== null
+  const questions = dontBorrow
+    ? [
+        'Can you help me restructure or close my high-cost loans first?',
+        'What documentation would improve my profile for a future application?',
+        'Is there a smaller, secured option once my current EMIs are stable?',
+      ]
+    : [
+        ...LENDER_QUESTIONS.common,
+        ...(product === 'SECURED_BUSINESS' || product === 'HOME'
+          ? LENDER_QUESTIONS.secured
+          : []),
+        ...(product === 'VEHICLE' ? LENDER_QUESTIONS.vehicle : []),
+      ].slice(0, 6)
+
+  const negotiationTarget = dontBorrow
+    ? null
+    : fairRate.low !== null &&
+        fairRate.high !== null &&
+        fairRate.expected !== null
       ? Math.min(
           fairRate.expected,
           fairRate.low + (fairRate.high - fairRate.low) * 0.35,
@@ -76,21 +86,29 @@ export function buildNegotiationCard(params: {
     explanation: fairRate.explanation,
   }
 
-  const talkingPoints = [
-    negotiationTarget !== null
-      ? `Ask to price at or below ${formatPercentPoints(negotiationTarget)} if your profile supports it.`
-      : 'Ask how the offered rate was derived from your profile.',
-    `Keep EMI at or under ${formatInr(affordability.safeNewEmi)} / month.`,
-    `Do not accept a principal above your safe range high of ${formatInr(safeAmount.safeAmountRange.high)}.`,
-    `Confirm APR (all-in), not just the headline rate — illustrative APR here is ${formatPercentPoints(apr.apr)}.`,
-  ]
+  const whyReasons = dontBorrow
+    ? decision.riskFactors.slice(0, 3)
+    : reasons.slice(0, 3)
+
+  const talkingPoints = dontBorrow
+    ? [
+        'Do not take a new loan at this time.',
+        'Reassess after high-cost debt is under control and income is more stable.',
+        ...decision.nextSteps.slice(0, 2),
+      ]
+    : [
+        negotiationTarget !== null
+          ? `Ask to price at or below ${formatPercentPoints(negotiationTarget)}${rateIndicativeOnly ? ' (indicative — low/medium confidence)' : ''}.`
+          : 'Ask how the offered rate was derived from your profile.',
+        `Keep EMI at or under ${formatInr(affordability.safeNewEmi)} / month.`,
+        `Do not accept a principal above your safe range high of ${formatInr(safeAmount.safeAmountRange.high)}.`,
+      ]
 
   const watchouts = [
     'Do not treat an estimated lender range as an approval.',
     'Watch for processing fees, insurance add-ons and floating-rate resets.',
-    'A higher sanctioned amount is not automatically a safer amount.',
   ]
-  if (decision.recommendation === 'DONT_BORROW') {
+  if (dontBorrow) {
     watchouts.unshift(
       'Self-assessment says do not take this loan — walk away if pressured.',
     )
@@ -104,6 +122,7 @@ export function buildNegotiationCard(params: {
   return {
     decision: decision.recommendation,
     product,
+    purpose: profile.loanPurpose,
     requestedAmount: profile.requestedAmount,
     recommendedAmount: safeAmount.recommendedAmount,
     safeAmountRange: safeAmount.safeAmountRange,
@@ -120,20 +139,24 @@ export function buildNegotiationCard(params: {
     emiCeiling: affordability.safeNewEmi,
     suggestedTenureMonths: tenureMonths,
     negotiationTargetRate: negotiationTarget,
-    reasons: reasons.slice(0, 5),
+    reasons: whyReasons,
     questionsToAskLender: questions,
     confidence,
     confidenceReason,
+    rateIndicativeOnly,
     fairRateBand,
     maxAcceptableEmi: affordability.safeNewEmi,
     maxAcceptablePrincipal: safeAmount.safeAmountRange.high,
     talkingPoints,
     watchouts,
+    nextSteps: decision.nextSteps,
     explanation: {
       label: 'Your borrower card',
-      summary: `Negotiation anchors: rate ≤ ${formatPercentPoints(negotiationTarget)}, EMI ≤ ${formatInr(affordability.safeNewEmi)}, principal within ${formatInr(safeAmount.safeAmountRange.low)} – ${formatInr(safeAmount.safeAmountRange.high)}.`,
+      summary: dontBorrow
+        ? 'DO NOT TAKE A NEW LOAN AT THIS TIME'
+        : `Negotiation anchors: rate ≤ ${formatPercentPoints(negotiationTarget)}, EMI ≤ ${formatInr(affordability.safeNewEmi)}.`,
       text: confidenceReason,
-      factors: reasons.slice(0, 5),
+      factors: whyReasons,
     },
   }
 }

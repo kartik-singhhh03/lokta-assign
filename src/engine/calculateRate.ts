@@ -209,7 +209,10 @@ function isStrongCredit(profile: BorrowerProfile): boolean {
   )
 }
 
-function creditAdjustment(profile: BorrowerProfile): {
+function creditAdjustment(
+  profile: BorrowerProfile,
+  product: ProductType,
+): {
   lowDelta: number
   highDelta: number
   reason: string | null
@@ -217,21 +220,30 @@ function creditAdjustment(profile: BorrowerProfile): {
 } {
   const score = profile.creditScore
   const band = profile.creditScoreBand
+  const secured = product === 'SECURED_BUSINESS' || product === 'HOME'
 
   if (profile.hasFormalCreditHistory === false) {
     return {
-      lowDelta: RATE_ADJUSTMENTS.credit.unknownWidenLow,
-      highDelta: RATE_ADJUSTMENTS.credit.unknownWidenHigh,
+      lowDelta: secured
+        ? RATE_ADJUSTMENTS.credit.thinFileSecuredWidenLow
+        : RATE_ADJUSTMENTS.credit.unknownWidenLow,
+      highDelta: secured
+        ? RATE_ADJUSTMENTS.credit.thinFileSecuredWidenHigh
+        : RATE_ADJUSTMENTS.credit.unknownWidenHigh,
       reason:
-        'No formal credit history (thin file) — band widened; we do not treat this as a 300 score',
+        'No formal credit history was provided, so lenders may price this profile differently. We have widened the range rather than assuming a low score.',
       unknown: true,
     }
   }
 
   if (band === 'unknown' || (band === null && score === null)) {
     return {
-      lowDelta: RATE_ADJUSTMENTS.credit.unknownWidenLow,
-      highDelta: RATE_ADJUSTMENTS.credit.unknownWidenHigh,
+      lowDelta: secured
+        ? RATE_ADJUSTMENTS.credit.thinFileSecuredWidenLow
+        : RATE_ADJUSTMENTS.credit.unknownWidenLow,
+      highDelta: secured
+        ? RATE_ADJUSTMENTS.credit.thinFileSecuredWidenHigh
+        : RATE_ADJUSTMENTS.credit.unknownWidenHigh,
       reason:
         'Credit score unavailable — indicative band widened and confidence reduced (not assumed bad credit)',
       unknown: true,
@@ -297,7 +309,7 @@ export function calculateRate(
   let high = band.high
   let confidence: ConfidenceLevel = 'high'
 
-  const credit = creditAdjustment(profile)
+  const credit = creditAdjustment(profile, product)
   low += credit.lowDelta
   high += credit.highDelta
   if (credit.reason) reasons.push(credit.reason)
@@ -328,6 +340,15 @@ export function calculateRate(
     high += RATE_ADJUSTMENTS.income.variableInformal
     reasons.push('Variable / informal income increases pricing uncertainty')
     confidence = downgradeConfidence(confidence)
+  } else if (
+    profile.incomeStability === null ||
+    profile.employmentType === null
+  ) {
+    high += RATE_ADJUSTMENTS.history.unknownWiden
+    reasons.push(
+      'Income stability / employment type incomplete — indicative band widened',
+    )
+    confidence = confidence === 'high' ? 'medium' : confidence
   }
 
   if (profile.employmentYears !== null) {
@@ -373,6 +394,16 @@ export function calculateRate(
   low = clampRate(low)
   high = clampRate(Math.max(high, low + 0.5))
 
+  const maxWidth = RATE_ADJUSTMENTS.maxBandWidthPp[confidence]
+  if (high - low > maxWidth) {
+    const mid = (low + high) / 2
+    low = clampRate(mid - maxWidth / 2)
+    high = clampRate(mid + maxWidth / 2)
+    reasons.push(
+      `Band width capped at ${maxWidth} pp for ${confidence} confidence so the indicative range stays actionable`,
+    )
+  }
+
   let expected = clampRate(low + (high - low) * 0.4)
 
   if (!credit.unknown && !distressed && isStrongCredit(profile)) {
@@ -391,17 +422,40 @@ export function calculateRate(
     reasons.push(`Income context: ${formatInr(incomeHint)} monthly basis`)
   }
 
+  const indicativeOnly = credit.unknown || confidence !== 'high'
+  const oneLiner = !credit.unknown && isStrongCredit(profile)
+    ? `${formatPercentPoints(low)} – ${formatPercentPoints(high)} because your strong credit history and stable income reduce expected risk.`
+    : credit.unknown
+      ? `Indicative ${formatPercentPoints(low)} – ${formatPercentPoints(high)} — low/medium confidence because bureau information is unavailable (not scored as bad credit).`
+      : `Indicative fair rate ${formatPercentPoints(low)} – ${formatPercentPoints(high)} (expected ~${formatPercentPoints(expected)}).`
+
   return {
     low,
     high,
     expected,
     confidence,
     reasons,
+    indicativeOnly,
     explanation: {
       label: 'Indicative fair rate',
-      summary: `Indicative fair rate ${formatPercentPoints(low)} – ${formatPercentPoints(high)} (expected ~${formatPercentPoints(expected)}).`,
+      summary: oneLiner,
       text: `${reasons.join(' ')} These bands are illustrative judgement assumptions — not guaranteed lender offers.`,
       factors: reasons,
+    },
+    breakdown: {
+      title: 'Why this rate?',
+      oneLiner,
+      inputsUsed: [
+        `Product ${product}`,
+        `Credit ${profile.creditScore ?? profile.creditScoreBand ?? 'unavailable'}`,
+        `Employment ${profile.employmentType ?? 'unknown'}`,
+        `Stability ${profile.incomeStability ?? 'unknown'}`,
+      ],
+      steps: reasons,
+      ruleUsed: 'Product base band + transparent adjustments in rules.ts',
+      assumptions: indicativeOnly
+        ? ['Rate shown as indicative because confidence is not high']
+        : [],
     },
   }
 }

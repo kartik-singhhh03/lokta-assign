@@ -4,10 +4,11 @@ import type {
   FairRateResult,
   MaybeNumber,
   ProductType,
+  StressStatus,
   StressTestResult,
 } from '../types'
 import { formatInr, formatPercentPoints } from '../utils/currency'
-import { resolveHouseholdIncome } from './calculateAffordability'
+import { resolveRepaymentIncome } from './calculateAffordability'
 import { calculateEmi } from './calculateEmi'
 import { AFFORDABILITY_RULES, STRESS_RULES } from './rules'
 
@@ -21,12 +22,11 @@ export function calculateStress(params: {
 }): StressTestResult {
   const { profile, affordability, fairRate, proposedPrincipal, tenureMonths } =
     params
-  const { income } = resolveHouseholdIncome(profile)
+  const { income } = resolveRepaymentIncome(profile)
   const baseRate = fairRate.expected
 
   const baseEmi = calculateEmi(proposedPrincipal, baseRate, tenureMonths)
 
-  // Prefer income stress for variable/informal; rate stress for stable salaried floating-like personal/business
   const useIncomeStress =
     profile.incomeStability === 'variable' ||
     profile.employmentType === 'gig' ||
@@ -35,9 +35,7 @@ export function calculateStress(params: {
     profile.employmentType === 'business'
 
   const stressedIncome =
-    income === null
-      ? null
-      : income * (1 - STRESS_RULES.incomeStressPercent)
+    income === null ? null : income * (1 - STRESS_RULES.incomeStressPercent)
 
   const stressedRate =
     baseRate === null
@@ -48,9 +46,8 @@ export function calculateStress(params: {
     ? baseEmi
     : calculateEmi(proposedPrincipal, stressedRate, tenureMonths)
 
-  const existingKnown = profile.existingEmi
-
-  const expenses = profile.monthlyExpenses
+  const expenses = affordability.expensesUsed
+  const existingKnown = affordability.existingEmiUsed
 
   const baseBuffer =
     income === null ||
@@ -80,28 +77,31 @@ export function calculateStress(params: {
       ? null
       : stressedEmi <= safeCeiling
 
+  let status: StressStatus = 'unknown'
+  if (stressedBuffer !== null) {
+    if (
+      stressedBuffer < AFFORDABILITY_RULES.minimumHouseholdBuffer ||
+      stillWithinSafeCeiling === false
+    ) {
+      status = 'stressed'
+    } else if (
+      stressedBuffer < AFFORDABILITY_RULES.minimumHouseholdBuffer * 3
+    ) {
+      status = 'tight'
+    } else {
+      status = 'comfortable'
+    }
+  }
+
   const scenarioLabel = useIncomeStress
-    ? `Income stress (−${(STRESS_RULES.incomeStressPercent * 100).toFixed(0)}%)`
-    : `Rate stress (+${STRESS_RULES.rateStressPercentagePoints} pp)`
+    ? `Income drops ${(STRESS_RULES.incomeStressPercent * 100).toFixed(0)}%`
+    : `Rate rises by ${STRESS_RULES.rateStressPercentagePoints} percentage points`
 
   let text: string
   if (useIncomeStress) {
-    text = `After a ${(STRESS_RULES.incomeStressPercent * 100).toFixed(0)}% income drop, income would fall from ${formatInr(income)} to ${formatInr(stressedIncome)}. Proposed EMI stays about ${formatInr(baseEmi)}, so your monthly buffer moves from ${formatInr(baseBuffer)} to ${formatInr(stressedBuffer)}.`
+    text = `If income drops ${(STRESS_RULES.incomeStressPercent * 100).toFixed(0)}%, it would fall from ${formatInr(income)} to ${formatInr(stressedIncome)}. Your remaining monthly buffer would fall from ${formatInr(baseBuffer)} to ${formatInr(stressedBuffer)}.`
   } else {
-    text = `If the rate rises by ${STRESS_RULES.rateStressPercentagePoints} percentage points from ${formatPercentPoints(baseRate)} to ${formatPercentPoints(stressedRate)}, EMI would move from ${formatInr(baseEmi)} to ${formatInr(stressedEmi)}. Monthly buffer would move from ${formatInr(baseBuffer)} to ${formatInr(stressedBuffer)}.`
-  }
-
-  if (stillWithinSafeCeiling === false) {
-    text += ' Under stress, the EMI no longer fits inside your safe ceiling.'
-  } else if (stillWithinSafeCeiling === true) {
-    text += ' Even under stress, the EMI stays within your safe ceiling — buffers still matter.'
-  }
-
-  if (
-    stressedBuffer !== null &&
-    stressedBuffer < AFFORDABILITY_RULES.minimumHouseholdBuffer
-  ) {
-    text += ' Residual cash flow under stress falls below our minimum household buffer.'
+    text = `If the rate rises by ${STRESS_RULES.rateStressPercentagePoints} percentage points from ${formatPercentPoints(baseRate)} to ${formatPercentPoints(stressedRate)}, EMI would move from ${formatInr(baseEmi)} to ${formatInr(stressedEmi)}. Your remaining monthly buffer would fall from ${formatInr(baseBuffer)} to ${formatInr(stressedBuffer)}.`
   }
 
   return {
@@ -115,15 +115,16 @@ export function calculateStress(params: {
     baseBuffer,
     stressedBuffer,
     stillWithinSafeCeiling,
+    status,
     explanation: {
       label: 'Stress test',
-      summary: `${scenarioLabel}: buffer ${formatInr(baseBuffer)} → ${formatInr(stressedBuffer)}.`,
+      summary: `${scenarioLabel}: buffer ${formatInr(baseBuffer)} → ${formatInr(stressedBuffer)} (${status}).`,
       text,
       factors: [
         scenarioLabel,
-        `Base EMI ${formatInr(baseEmi)}`,
-        `Stressed EMI ${formatInr(stressedEmi)}`,
-        `Safe new-EMI ceiling ${formatInr(safeCeiling)}`,
+        `Status: ${status}`,
+        `Base buffer ${formatInr(baseBuffer)}`,
+        `Stressed buffer ${formatInr(stressedBuffer)}`,
       ],
     },
   }

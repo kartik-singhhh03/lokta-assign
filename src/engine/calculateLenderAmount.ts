@@ -8,7 +8,7 @@ import type {
 } from '../types'
 import { formatInr } from '../utils/currency'
 import { mergeConfidence, widenRange } from '../utils/confidence'
-import { resolveHouseholdIncome } from './calculateAffordability'
+import { resolveRepaymentIncome } from './calculateAffordability'
 import { calculateSupportedPrincipal } from './calculateEmi'
 import {
   DEFAULT_TENURE_MONTHS,
@@ -56,7 +56,7 @@ export function calculateLenderAmount(
   affordability: AffordabilityResult,
   fairRate: FairRateResult,
 ): LenderAmountResult {
-  const { income } = resolveHouseholdIncome(profile)
+  const { income } = resolveRepaymentIncome(profile)
   const factors: string[] = []
   let confidence: ConfidenceLevel = fairRate.confidence
 
@@ -68,9 +68,17 @@ export function calculateLenderAmount(
         label: 'Estimated lender range',
         summary:
           'Estimated lender range is unknown because income is unavailable.',
-        text: 'We do not invent a sanction amount when income is unknown. This is not an underwriting decision.',
+        text: 'This is an indicative estimate, not a lender approval or guarantee.',
         factors: ['Missing income'],
         missingInputs: ['monthly income'],
+      },
+      breakdown: {
+        title: 'Why this lender range?',
+        oneLiner: 'Unknown — income missing.',
+        inputsUsed: [],
+        steps: ['Income unavailable'],
+        ruleUsed: 'Illustrative lender heuristics',
+        assumptions: [],
       },
     }
   }
@@ -161,9 +169,25 @@ export function calculateLenderAmount(
     confidence,
     explanation: {
       label: 'Estimated lender range',
-      summary: `Estimated lender range ${formatInr(low)} – ${formatInr(high)} (illustrative, not an approval).`,
-      text: `This is an estimated lender range from income, obligations, credit profile and product context. It is not a sanction decision. A lender may theoretically offer more than you should safely accept.`,
+      summary: `Estimated lender range ${formatInr(low)} – ${formatInr(high)}.`,
+      text: 'This is an indicative estimate, not a lender approval or guarantee. A lender may theoretically offer more than you should safely accept.',
       factors,
+    },
+    breakdown: {
+      title: 'Why this lender range?',
+      oneLiner:
+        'Estimated lender range is a separate illustrative calculation from your safe borrowing amount — not an approval.',
+      inputsUsed: [
+        `Income ${formatInr(income)}`,
+        `Product ${product}`,
+        `Collateral ${formatInr(profile.collateralValue)}`,
+      ],
+      steps: factors,
+      ruleUsed: 'Illustrative lender capacity heuristics in rules.ts',
+      assumptions: [
+        'Not a sanction decision',
+        'Collateral may raise lender estimate for secured products only',
+      ],
     },
   }
 }

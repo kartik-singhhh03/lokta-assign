@@ -6,10 +6,8 @@ import type {
   SafeAmountResult,
 } from '../types'
 import { formatInr } from '../utils/currency'
-import { mergeConfidence, widenRange } from '../utils/confidence'
-import {
-  calculateSupportedPrincipal,
-} from './calculateEmi'
+import { mergeConfidence } from '../utils/confidence'
+import { calculateSupportedPrincipal } from './calculateEmi'
 import {
   AFFORDABILITY_RULES,
   DEFAULT_TENURE_MONTHS,
@@ -17,20 +15,29 @@ import {
   TENURE_OPTIONS,
 } from './rules'
 
-function pickTenure(
-  profile: BorrowerProfile,
-  product: ProductType,
-): number {
+function pickTenure(profile: BorrowerProfile, product: ProductType): number {
   const desired = profile.desiredTenureMonths
   const options = TENURE_OPTIONS[product]
   if (desired !== null && options.includes(desired)) return desired
   if (desired !== null) {
-    // Snap to nearest available option
     return options.reduce((best, n) =>
       Math.abs(n - desired) < Math.abs(best - desired) ? n : best,
     )
   }
   return DEFAULT_TENURE_MONTHS[product]
+}
+
+function tenureNeighbors(
+  product: ProductType,
+  selected: number,
+  steps: number,
+): { shorter: number; longer: number } {
+  const options = [...TENURE_OPTIONS[product]]
+  const idx = Math.max(0, options.indexOf(selected))
+  const shorter = options[Math.max(0, idx - steps)] ?? selected
+  const longer =
+    options[Math.min(options.length - 1, idx + steps)] ?? selected
+  return { shorter, longer }
 }
 
 export function calculateLoanAmount(
@@ -58,6 +65,7 @@ export function calculateLoanAmount(
         recommended: nearZero ? 0 : null,
         midpoint: nearZero ? 0 : null,
       },
+      mathematicalMaximum: nearZero ? 0 : null,
       recommendedAmount: nearZero ? 0 : null,
       confidence: affordability.confidence,
       explanation: {
@@ -71,12 +79,17 @@ export function calculateLoanAmount(
         factors: [
           `Safe new EMI: ${safeEmi === null ? 'unknown' : formatInr(safeEmi)}`,
           `Indicative rate: ${rate === null ? 'unknown' : `${rate}%`}`,
-          `Tenure basis: ${tenureMonths} months`,
         ],
-        missingInputs:
-          safeEmi === null || rate === null
-            ? ['safe EMI and/or rate']
-            : undefined,
+      },
+      breakdown: {
+        title: 'Why this safe amount?',
+        oneLiner: nearZero
+          ? 'Safe amount is ₹0 because safe EMI headroom is exhausted.'
+          : 'Safe amount unknown — missing EMI ceiling or rate.',
+        inputsUsed: [],
+        steps: [],
+        ruleUsed: 'Inverse EMI from safe new-EMI ceiling',
+        assumptions: [],
       },
     }
   }
@@ -86,6 +99,7 @@ export function calculateLoanAmount(
     return {
       tenureMonths,
       safeAmountRange: { low: null, high: null, recommended: null },
+      mathematicalMaximum: null,
       recommendedAmount: null,
       confidence: 'low',
       explanation: {
@@ -94,45 +108,69 @@ export function calculateLoanAmount(
         text: 'Inverse EMI calculation returned unknown.',
         factors: [],
       },
+      breakdown: {
+        title: 'Why this safe amount?',
+        oneLiner: 'Could not invert EMI to principal.',
+        inputsUsed: [],
+        steps: [],
+        ruleUsed: 'Inverse EMI',
+        assumptions: [],
+      },
     }
   }
 
-  // Also check longer tenure upper bound within product options for range high
-  const longest = TENURE_OPTIONS[product][TENURE_OPTIONS[product].length - 1]!
-  const shortest = TENURE_OPTIONS[product][0]!
-  const atLong = calculateSupportedPrincipal(safeEmi, rate, longest) ?? supported
-  const atShort =
-    calculateSupportedPrincipal(safeEmi, rate, shortest) ?? supported
-
-  let low = Math.min(supported, atShort) * SAFE_AMOUNT_RULES.lowFactor
-  let high = Math.max(supported, atLong) * SAFE_AMOUNT_RULES.highFactor
-
-  const widened = widenRange(low, high, affordability.confidence)
-  low = widened.low ?? low
-  high = widened.high ?? high
-  low = Math.max(0, low)
-  high = Math.max(low, high)
-
-  const mid = (low + high) / 2
-  let recommended = Math.min(
-    high * SAFE_AMOUNT_RULES.recommendedFactorOfHigh,
-    mid * SAFE_AMOUNT_RULES.recommendedFactorOfMid,
-    supported,
+  const { shorter, longer } = tenureNeighbors(
+    product,
+    tenureMonths,
+    SAFE_AMOUNT_RULES.tenureWindowSteps,
   )
 
-  // Prefer not recommending above the primary tenure-supported amount
-  recommended = Math.max(0, Math.min(recommended, supported))
+  const rateLow = fairRate.low ?? rate
+  const rateHigh = fairRate.high ?? rate
+  const rateSpread =
+    ((rateHigh - rateLow) / 2) * SAFE_AMOUNT_RULES.rateSpreadShare
+  const rateForLowPrincipal = rate + rateSpread // higher rate → lower principal
+  const rateForHighPrincipal = Math.max(rate - rateSpread, rateLow)
 
-  // If borrower requested less and it's within safe range, recommend requested
+  const atShorterHigherRate =
+    calculateSupportedPrincipal(safeEmi, rateForLowPrincipal, shorter) ??
+    supported
+  const atLongerLowerRate =
+    calculateSupportedPrincipal(safeEmi, rateForHighPrincipal, longer) ??
+    supported
+  const atSelected = supported
+
+  let comfortableLow =
+    Math.min(atShorterHigherRate, atSelected) *
+    SAFE_AMOUNT_RULES.comfortableLowFactor
+  let comfortableHigh =
+    Math.max(atLongerLowerRate, atSelected) *
+    SAFE_AMOUNT_RULES.comfortableHighFactor
+
+  comfortableLow = Math.max(0, comfortableLow)
+  comfortableHigh = Math.max(comfortableLow, comfortableHigh)
+
+  const longest = TENURE_OPTIONS[product][TENURE_OPTIONS[product].length - 1]!
+  const mathematicalMaximum =
+    calculateSupportedPrincipal(safeEmi, rateLow, longest) ?? supported
+
+  const mid = (comfortableLow + comfortableHigh) / 2
+  let recommended = Math.min(
+    comfortableHigh * SAFE_AMOUNT_RULES.recommendedFactorOfHigh,
+    mid * SAFE_AMOUNT_RULES.recommendedFactorOfMid,
+    atSelected,
+  )
+  recommended = Math.max(0, Math.min(recommended, atSelected))
+
   if (
     profile.requestedAmount !== null &&
     profile.requestedAmount > 0 &&
-    profile.requestedAmount <= high
+    profile.requestedAmount <= comfortableHigh
   ) {
-    recommended = Math.min(recommended, profile.requestedAmount)
-    // If requested is comfortably inside, use requested as recommendation
-    if (profile.requestedAmount <= supported) {
+    if (profile.requestedAmount <= atSelected) {
       recommended = profile.requestedAmount
+    } else {
+      recommended = Math.min(recommended, profile.requestedAmount)
     }
   }
 
@@ -141,25 +179,54 @@ export function calculateLoanAmount(
     fairRate.confidence,
   ])
 
+  const oneLiner =
+    profile.requestedAmount !== null &&
+    recommended === profile.requestedAmount
+      ? `${formatInr(recommended)} because this loan amount keeps the proposed EMI within your safe monthly ceiling of ${formatInr(safeEmi)}.`
+      : `Comfortable safe range ${formatInr(comfortableLow)} – ${formatInr(comfortableHigh)} from your ${formatInr(safeEmi)} EMI ceiling at ~${rate.toFixed(1)}% over about ${tenureMonths} months.`
+
   return {
     tenureMonths,
     safeAmountRange: {
-      low,
-      high,
+      low: comfortableLow,
+      high: comfortableHigh,
       midpoint: mid,
       recommended,
     },
+    mathematicalMaximum,
     recommendedAmount: recommended,
     confidence,
     explanation: {
       label: 'Safe borrowing amount',
-      summary: `Safe borrower range ${formatInr(low)} – ${formatInr(high)}; recommended ${formatInr(recommended)}.`,
-      text: `Using your safe new-EMI ceiling of ${formatInr(safeEmi)} at an indicative ${rate}% over about ${tenureMonths} months, the principal you can safely carry is around ${formatInr(supported)}. The published range reflects tenure flexibility and confidence. Collateral never overrides this affordability constraint.`,
+      summary: `Safe (comfortable) range ${formatInr(comfortableLow)} – ${formatInr(comfortableHigh)}; recommended ${formatInr(recommended)}. Mathematical maximum at longest tenure: ${formatInr(mathematicalMaximum)}.`,
+      text: `${oneLiner} The comfortable range uses a narrow tenure window around ${tenureMonths} months and rate uncertainty — not the full product maximum. Collateral never increases this amount.`,
       factors: [
         `Safe new EMI ceiling ${formatInr(safeEmi)}`,
-        `Indicative rate ${rate}%`,
-        `Primary tenure ${tenureMonths} months → supported ~${formatInr(supported)}`,
+        `Indicative rate ${rate.toFixed(2)}%`,
+        `Selected tenure ${tenureMonths} months → ~${formatInr(atSelected)}`,
+        `Comfortable window tenures ${shorter}–${longer} months`,
+        `Mathematical max (${longest} mo @ ${rateLow.toFixed(1)}%): ${formatInr(mathematicalMaximum)}`,
+      ],
+    },
+    breakdown: {
+      title: 'Why this safe amount?',
+      oneLiner,
+      inputsUsed: [
+        `Safe EMI ${formatInr(safeEmi)}`,
+        `Expected rate ${rate.toFixed(2)}%`,
+        `Tenure ${tenureMonths} months`,
+      ],
+      steps: [
+        `Primary supported principal at ${tenureMonths} months ≈ ${formatInr(atSelected)}`,
+        `Comfortable low (shorter tenure / higher rate pad) ≈ ${formatInr(comfortableLow)}`,
+        `Comfortable high (nearby longer tenure / lower rate pad) ≈ ${formatInr(comfortableHigh)}`,
+        `Mathematical maximum (longest product tenure) ≈ ${formatInr(mathematicalMaximum)} — shown separately, not as the safe range`,
         `Recommended ${formatInr(recommended)}`,
+      ],
+      ruleUsed:
+        'Comfortable range from inverse EMI over a narrow tenure/rate window; mathematical max is separate',
+      assumptions: [
+        'Safe amount is repayment-capacity driven — collateral does not increase it',
       ],
     },
   }

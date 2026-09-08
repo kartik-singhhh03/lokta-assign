@@ -7,7 +7,7 @@ import type {
   RateRange,
 } from '../types'
 import { assessProfileConfidence } from '../utils/confidence'
-import { formatInr } from '../utils/currency'
+import { formatInrRange } from '../utils/currency'
 import { calculateAffordability } from './calculateAffordability'
 import { calculateApr } from './calculateApr'
 import {
@@ -22,7 +22,50 @@ import { calculateStress } from './calculateStress'
 import { determineProduct } from './determineProduct'
 import { evaluateBorrower } from './evaluateBorrower'
 import { buildNegotiationCard } from './buildNegotiationCard'
-import { FEE_RULES, TENURE_OPTIONS } from './rules'
+import { DISCLAIMER, FEE_RULES, TENURE_OPTIONS } from './rules'
+
+function buildWhatWeDontKnow(profile: BorrowerProfile): string[] {
+  const items: string[] = [
+    'Exact lender offer / underwriting decision',
+    'Actual processing fee the lender will charge',
+    'Exact product-specific underwriting criteria',
+  ]
+  if (
+    profile.creditScore === null &&
+    (profile.creditScoreBand === null ||
+      profile.creditScoreBand === 'unknown')
+  ) {
+    items.push('Bureau / credit score history')
+  }
+  if (profile.hasFormalCreditHistory === false) {
+    items.push('Formal credit history (thin file)')
+  }
+  if (profile.existingEmi === null) {
+    items.push('Exact existing EMI amounts')
+  }
+  if (profile.monthlyExpenses === null) {
+    items.push('Exact household expenses')
+  }
+  if (
+    profile.outstandingUnsecuredDebt !== null &&
+    profile.existingEmi === null
+  ) {
+    items.push('Exact debt repayment schedule for outstanding loans')
+  }
+  if (profile.documentedAnnualIncome !== null && profile.monthlyIncomeLow !== null) {
+    items.push('Exact business profit vs stated cash income')
+  }
+  if (profile.collateralValue !== null) {
+    items.push('Lender valuation of collateral / LTV they will apply')
+  }
+  if (
+    profile.spouseMonthlyIncome !== null &&
+    profile.spouseIsCoApplicant !== true
+  ) {
+    items.push('Whether spouse will be a co-applicant')
+  }
+  return items
+}
 
 /**
  * Single public orchestration entry point for the deterministic engine.
@@ -53,7 +96,10 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
     null
 
   const apr = calculateApr({
-    principal: principalForPricing,
+    principal:
+      principalForPricing !== null && principalForPricing > 0
+        ? principalForPricing
+        : null,
     annualRatePercent: fairRate.expected,
     tenureMonths: safeAmount.tenureMonths,
     processingFeePercent:
@@ -100,10 +146,19 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
   )
 
   const tenureTradeoffs = TENURE_OPTIONS[productResult.product]
-    .filter((t) => t <= 84 || productResult.product === 'SECURED_BUSINESS' || productResult.product === 'HOME')
+    .filter(
+      (t) =>
+        t <= 84 ||
+        productResult.product === 'SECURED_BUSINESS' ||
+        productResult.product === 'HOME',
+    )
     .slice(0, 5)
     .map((tenureMonths) => {
-      const emi = calculateEmi(principalForPricing, fairRate.expected, tenureMonths)
+      const emi = calculateEmi(
+        principalForPricing,
+        fairRate.expected,
+        tenureMonths,
+      )
       return {
         tenureMonths,
         emi,
@@ -126,30 +181,23 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
     suggestedTenureMonths: safeAmount.tenureMonths,
     emiToIncomeRatio:
       recommendedEmi !== null &&
-      affordability.safeTotalEmi !== null &&
-      profile.monthlyIncome !== null &&
-      profile.monthlyIncome > 0
-        ? recommendedEmi / profile.monthlyIncome
+      affordability.incomeUsed !== null &&
+      affordability.incomeUsed > 0
+        ? recommendedEmi / affordability.incomeUsed
         : null,
     confidence: affordability.confidence,
     explanation: {
       label: 'EMI guidance',
-      summary: `Keep new EMI at or under ${formatInr(affordability.safeNewEmi)}; suggested tenure ${safeAmount.tenureMonths} months.`,
+      summary: affordability.breakdown.oneLiner,
       text: `Shorter tenures raise EMI and lower total interest; longer tenures lower EMI and raise total interest. Stay inside your safe EMI ceiling.`,
-      factors: [
-        `Safe new EMI ceiling ${formatInr(affordability.safeNewEmi)}`,
-        `EMI at recommended size ${formatInr(recommendedEmi)}`,
-        `Suggested tenure ${safeAmount.tenureMonths} months`,
-      ],
+      factors: affordability.breakdown.steps,
     },
     tenureTradeoffs,
   }
 
   const gap =
-    lenderAmount.estimatedLenderAmountRange.midpoint !== null &&
-    lenderAmount.estimatedLenderAmountRange.midpoint !== undefined &&
-    safeAmount.safeAmountRange.midpoint !== null &&
-    safeAmount.safeAmountRange.midpoint !== undefined
+    lenderAmount.estimatedLenderAmountRange.midpoint != null &&
+    safeAmount.safeAmountRange.midpoint != null
       ? lenderAmount.estimatedLenderAmountRange.midpoint -
         safeAmount.safeAmountRange.midpoint
       : null
@@ -178,12 +226,20 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
     },
   ]
 
+  const lenderVsSafe =
+    profile.collateralValue !== null &&
+    lenderAmount.estimatedLenderAmountRange.high != null &&
+    safeAmount.safeAmountRange.high != null &&
+    lenderAmount.estimatedLenderAmountRange.high >
+      safeAmount.safeAmountRange.high
+      ? 'Your property may make a larger secured facility possible, but your documented income does not make that larger amount comfortable to repay.'
+      : 'The amount a lender may sanction is not necessarily the amount you should borrow.'
+
   const reasons = [
     decision.explanation.summary,
     ...decision.positiveFactors.slice(0, 2),
     ...decision.riskFactors.slice(0, 2),
     productResult.explanation.summary,
-    fairRate.reasons[0] ?? 'Indicative rate band applied from product rules',
   ].filter(Boolean)
 
   const negotiation = buildNegotiationCard({
@@ -200,6 +256,8 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
     confidence: profileConfidence.level,
     confidenceReason: profileConfidence.reason,
   })
+
+  const whatWeDontKnow = buildWhatWeDontKnow(profile)
 
   return {
     profile,
@@ -218,9 +276,8 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
       gap,
       confidence: safeAmount.confidence,
       explanation: {
-        summary:
-          'Estimated lender range and safe borrower range are calculated separately.',
-        text: 'The amount a lender may sanction is not necessarily the amount you should borrow.',
+        summary: lenderVsSafe,
+        text: `${lenderVsSafe} Estimated lender range ${formatInrRange(lenderAmount.estimatedLenderAmountRange.low, lenderAmount.estimatedLenderAmountRange.high)} vs safe borrower range ${formatInrRange(safeAmount.safeAmountRange.low, safeAmount.safeAmountRange.high)}. This is an indicative estimate, not a lender approval or guarantee.`,
         factors: [
           lenderAmount.explanation.summary,
           safeAmount.explanation.summary,
@@ -235,7 +292,17 @@ export function assessBorrower(profile: BorrowerProfile): AssessmentResult {
     confidenceReason: profileConfidence.reason,
     unknownFields: profileConfidence.unknownFields,
     missingInputsForPrecision: profileConfidence.missingInputsForPrecision,
+    whatWeDontKnow,
     reasons: reasons.slice(0, 5),
+    oneLiners: {
+      decision: decision.explanation.summary,
+      safeEmi: affordability.breakdown.oneLiner,
+      safeAmount: safeAmount.breakdown.oneLiner,
+      rate: fairRate.breakdown.oneLiner,
+      apr: apr.breakdown.oneLiner,
+      lenderVsSafe,
+    },
+    disclaimer: DISCLAIMER,
     assessedAt: new Date().toISOString(),
   }
 }

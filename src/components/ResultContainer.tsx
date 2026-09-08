@@ -6,6 +6,7 @@ import {
   formatPercentPoints,
 } from '../utils'
 import { NegotiationCardView } from './NegotiationCardView'
+import { WhyThisNumber } from './WhyThisNumber'
 
 interface ResultContainerProps {
   result: AssessmentResult
@@ -32,6 +33,19 @@ function decisionTone(code: BorrowRecommendation): string {
       return 'text-[var(--amber)]'
     case 'DONT_BORROW':
       return 'text-[var(--danger)]'
+  }
+}
+
+function stressLabel(status: AssessmentResult['stress']['status']): string {
+  switch (status) {
+    case 'comfortable':
+      return 'Comfortable'
+    case 'tight':
+      return 'Tight'
+    case 'stressed':
+      return 'Stressed'
+    default:
+      return 'Unknown'
   }
 }
 
@@ -74,7 +88,7 @@ export function ResultContainer({
           {decisionLabel(decision)}
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-[var(--ink-soft)]">
-          {result.borrowDecision.explanation.summary}
+          {result.oneLiners.decision}
         </p>
         <p className="mt-3 text-xs text-[var(--muted)]">
           Confidence:{' '}
@@ -101,9 +115,12 @@ export function ResultContainer({
             />
           ) : null}
           {result.borrowDecision.riskFactors.length > 0 ? (
+            <FactorList label="Watch" items={result.borrowDecision.riskFactors} />
+          ) : null}
+          {result.borrowDecision.nextSteps.length > 0 ? (
             <FactorList
-              label="Watch"
-              items={result.borrowDecision.riskFactors}
+              label="Constructive next steps"
+              items={result.borrowDecision.nextSteps}
             />
           ) : null}
         </ResultCard>
@@ -116,8 +133,11 @@ export function ResultContainer({
               result.capacity.likelySanction.high,
             )}
           />
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            This is an indicative estimate, not a lender approval or guarantee.
+          </p>
           <Metric
-            label="Safe borrower range"
+            label="Safe borrower range (comfortable)"
             value={formatInrRange(
               result.capacity.safeCarry.low,
               result.capacity.safeCarry.high,
@@ -127,10 +147,17 @@ export function ResultContainer({
             label="Recommended amount"
             value={formatInr(result.capacity.recommendedAmount)}
           />
+          {result.safeAmount.mathematicalMaximum !== null ? (
+            <Metric
+              label="Mathematical maximum (longest tenure)"
+              value={formatInr(result.safeAmount.mathematicalMaximum)}
+            />
+          ) : null}
           <p className="mt-4 border-l-2 border-[var(--teal)] pl-3 text-sm leading-relaxed text-[var(--ink-soft)]">
-            The amount a lender may sanction is not necessarily the amount you
-            should borrow.
+            {result.oneLiners.lenderVsSafe}
           </p>
+          <WhyThisNumber breakdown={result.safeAmount.breakdown} />
+          <WhyThisNumber breakdown={result.lenderAmount.breakdown} />
           <p className="mt-2 text-xs text-[var(--muted)]">
             Product route: {result.product.product.replaceAll('_', ' ')} —{' '}
             {result.product.explanation.summary}
@@ -139,7 +166,11 @@ export function ResultContainer({
 
         <ResultCard title="3. Fair rate">
           <Metric
-            label="Indicative fair rate"
+            label={
+              result.fairRate.indicativeOnly
+                ? 'Indicative fair rate (low confidence band)'
+                : 'Indicative fair rate'
+            }
             value={`${formatPercentPoints(result.fairRate.low)} – ${formatPercentPoints(result.fairRate.high)}`}
           />
           <Metric
@@ -148,15 +179,23 @@ export function ResultContainer({
           />
           <Metric label="All-in APR" value={formatPercentPoints(result.apr.apr)} />
           <Metric
-            label="Illustrative processing fee"
+            label="Illustrative fee assumption"
             value={`${formatPercentPoints(result.apr.processingFeePercent)} (${formatInr(result.apr.processingFeeAmount)})`}
           />
+          <Metric
+            label="Net amount received"
+            value={formatInr(result.apr.netDisbursal)}
+          />
+          <Metric
+            label="Total repayment"
+            value={formatInr(result.apr.totalRepayment)}
+          />
           <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-            {result.fairRate.explanation.text}
+            {result.oneLiners.rate}
           </p>
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            {result.apr.explanation.summary}
-          </p>
+          <p className="mt-1 text-sm text-[var(--muted)]">{result.oneLiners.apr}</p>
+          <WhyThisNumber breakdown={result.fairRate.breakdown} />
+          <WhyThisNumber breakdown={result.apr.breakdown} />
         </ResultCard>
 
         <ResultCard title="4. EMI">
@@ -173,8 +212,9 @@ export function ResultContainer({
             }
           />
           <p className="mt-3 text-sm text-[var(--ink-soft)]">
-            {result.emiGuidance.explanation.text}
+            {result.oneLiners.safeEmi}
           </p>
+          <WhyThisNumber breakdown={result.affordability.breakdown} />
           {result.emiGuidance.tenureTradeoffs.length > 0 ? (
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[280px] text-left text-xs">
@@ -191,12 +231,8 @@ export function ResultContainer({
                       key={row.tenureMonths}
                       className="border-t border-[var(--line)]"
                     >
-                      <td className="py-2 tabular-nums">
-                        {row.tenureMonths} mo
-                      </td>
-                      <td className="py-2 tabular-nums">
-                        {formatInr(row.emi)}
-                      </td>
+                      <td className="py-2 tabular-nums">{row.tenureMonths} mo</td>
+                      <td className="py-2 tabular-nums">{formatInr(row.emi)}</td>
                       <td className="py-2 tabular-nums">
                         {formatInr(row.totalInterest)}
                       </td>
@@ -216,6 +252,9 @@ export function ResultContainer({
           <p className="text-sm font-medium text-[var(--ink)]">
             {result.stress.scenarioLabel}
           </p>
+          <p className="mt-1 text-sm text-[var(--ink-soft)]">
+            Status: {stressLabel(result.stress.status)}
+          </p>
           <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
             {result.stress.explanation.text}
           </p>
@@ -229,27 +268,29 @@ export function ResultContainer({
           </ol>
         </ResultCard>
 
-        {result.missingInputsForPrecision.length > 0 ? (
-          <ResultCard title="What would make this estimate more precise?">
-            <ul className="space-y-2 text-sm text-[var(--ink-soft)]">
-              {result.missingInputsForPrecision.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className="text-[var(--teal)]" aria-hidden="true">
-                    ·
-                  </span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </ResultCard>
-        ) : null}
+        <ResultCard title="What we don’t know">
+          <ul className="space-y-2 text-sm text-[var(--ink-soft)]">
+            {result.whatWeDontKnow.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span className="text-[var(--teal)]" aria-hidden="true">
+                  ·
+                </span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </ResultCard>
       </div>
 
       <div className="animate-rise-delay-2 mt-10 print:mt-0">
         <NegotiationCardView card={result.negotiation} />
       </div>
 
-      <div className="mt-10 flex flex-col gap-3 print:hidden">
+      <p className="mt-8 text-xs leading-relaxed text-[var(--muted)] print:hidden">
+        {result.disclaimer}
+      </p>
+
+      <div className="mt-8 flex flex-col gap-3 print:hidden">
         <button
           type="button"
           onClick={onEditAnswers}

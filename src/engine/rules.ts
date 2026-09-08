@@ -19,14 +19,20 @@ export const AFFORDABILITY_RULES = {
   /** Financially stressed safe FOIR (bounces, severe burden, fragile income) */
   financiallyStressedFoir: 0.25,
 
-  /**
-   * After income − expenses − existing EMI, only this share of residual
+/**
+ * After income − expenses − existing EMI, only this share of residual
    * cash flow may be committed to a new EMI (conservative guardrail).
    */
   disposableCashFlowShare: 0.5,
 
   /** Absolute minimum residual buffer the household should retain (₹ / month). */
   minimumHouseholdBuffer: 5_000,
+
+  /**
+   * When household expenses are unknown, assume this share of income as
+   * essential spending (disclosed assumption — never silent zero).
+   */
+  unknownExpensesShareOfIncome: 0.55,
 
   /** Existing EMI / income ratio above which we treat the borrower as stressed. */
   stressedExistingBurdenRatio: 0.45,
@@ -36,6 +42,26 @@ export const AFFORDABILITY_RULES = {
 
   /** Requested amount may exceed safe high by this fraction before BORROW_LESS. */
   borrowLessTolerance: 0.05,
+
+  /**
+   * Outstanding high-cost unsecured debt / monthly income above this,
+   * combined with a recent bounce, treats repayment capacity as exhausted
+   * even when exact EMI is unknown.
+   */
+  highCostDebtToIncomeStress: 1.0,
+} as const
+
+/**
+ * Income normalisation for cash bands vs documented income.
+ * Documented ITR is preferred for affordability when a cash band exists.
+ */
+export const INCOME_NORMALIZATION = {
+  /** Prefer ITR/12 over cash midpoint when both exist */
+  preferDocumentedWhenBandPresent: true,
+  /** If only a cash band exists, use the low end (never the high end) */
+  bandFallback: 'low' as const,
+  note:
+    'Cash income bands are informational. Affordability uses documented income when available, otherwise the conservative low end of the band — never the high end.',
 } as const
 
 /**
@@ -97,9 +123,12 @@ export const RATE_ADJUSTMENTS = {
     score_700_749: 0,
     score_650_699: 1.25,
     score_below_650: 3.0,
-    /** Unknown score: widen band rather than assign a low score */
-    unknownWidenLow: -1.0,
-    unknownWidenHigh: 2.5,
+    /** Unknown / thin file: widen band rather than assign a low score */
+    unknownWidenLow: -0.75,
+    unknownWidenHigh: 2.0,
+    /** Secured products: thinner widen — still indicative, more actionable */
+    thinFileSecuredWidenLow: -0.5,
+    thinFileSecuredWidenHigh: 1.5,
   },
   income: {
     stableSalaried: -0.5,
@@ -119,8 +148,14 @@ export const RATE_ADJUSTMENTS = {
   /** Extra half-width applied when confidence is medium / low */
   confidenceWiden: {
     high: 0,
-    medium: 0.75,
-    low: 1.75,
+    medium: 0.5,
+    low: 1.25,
+  },
+  /** Cap total band width (high − low) so negotiation stays actionable */
+  maxBandWidthPp: {
+    high: 4,
+    medium: 6,
+    low: 8,
   },
 } as const
 
@@ -190,14 +225,23 @@ export const LENDER_AMOUNT_RULES = {
 
 /** Safe-amount range construction around the EMI-supported principal. */
 export const SAFE_AMOUNT_RULES = {
-  /** Lower / upper band around the primary supported principal */
-  lowFactor: 0.85,
-  highFactor: 1.05,
-  /** Recommended amount sits at this fraction of the safe high (capped). */
-  recommendedFactorOfHigh: 0.92,
-  /** Also never recommend above this fraction of the mid-point. */
+  /**
+   * Comfortable range uses a narrow tenure window around the selected tenure
+   * (± one product step), plus rate-band endpoints — not the full product max.
+   */
+  tenureWindowSteps: 1,
+  /** Rate uncertainty: use expected± this share of (high-low) for comfortable bounds */
+  rateSpreadShare: 0.5,
+  /** Soft pad on comfortable low/high after tenure+rate window */
+  comfortableLowFactor: 0.92,
+  comfortableHighFactor: 1.05,
+  /** Recommended amount sits at this fraction of the comfortable high (capped). */
+  recommendedFactorOfHigh: 0.95,
   recommendedFactorOfMid: 1.0,
 } as const
+
+export const DISCLAIMER =
+  'Borrower Copilot is a self-assessment tool, not a lender approval or financial advice. Rates, fees and lender ranges are illustrative estimates. Actual terms depend on the lender and your verified application.'
 
 /** Meaningful collateral threshold (₹) before suggesting secured routes. */
 export const COLLATERAL_RULES = {

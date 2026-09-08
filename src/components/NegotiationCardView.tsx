@@ -10,6 +10,8 @@ interface NegotiationCardViewProps {
 }
 
 export function NegotiationCardView({ card }: NegotiationCardViewProps) {
+  const dontBorrow = card.decision === 'DONT_BORROW'
+
   return (
     <article
       id="borrower-card"
@@ -33,68 +35,106 @@ export function NegotiationCardView({ card }: NegotiationCardViewProps) {
         </button>
       </div>
 
-      <p className="mt-2 text-xs text-[var(--muted)]">
-        Self-assessment anchors — not a lender approval or guaranteed rate.
-      </p>
-
-      <div className="mt-6 grid grid-cols-2 gap-4 border-y border-[var(--line)] py-5 sm:grid-cols-4">
-        <HeroStat
-          label="Fair rate"
-          value={`${formatPercentPoints(card.fairRateRange.low)} – ${formatPercentPoints(card.fairRateRange.high)}`}
-        />
-        <HeroStat
-          label="Safe EMI"
-          value={`${formatInr(card.emiCeiling)} / mo`}
-        />
-        <HeroStat
-          label="Safe borrowing"
-          value={formatInrRange(
-            card.safeAmountRange.low,
-            card.safeAmountRange.high,
-          )}
-        />
-        <HeroStat
-          label="Negotiation target"
-          value={`≤ ${formatPercentPoints(card.negotiationTargetRate)}`}
-        />
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--muted)]">
+        <span>Purpose: {card.purpose ?? '—'}</span>
+        <span>Product: {card.product.replaceAll('_', ' ')}</span>
+        <span>
+          Confidence:{' '}
+          <span className="font-medium text-[var(--ink)] uppercase">
+            {card.confidence}
+          </span>
+        </span>
       </div>
 
-      <div className="mt-5 grid gap-2 text-sm sm:grid-cols-2">
-        <Row label="Decision" value={card.decision.replaceAll('_', ' ')} />
-        <Row
-          label="Product"
-          value={card.product.replaceAll('_', ' ')}
-        />
-        <Row label="Requested" value={formatInr(card.requestedAmount)} />
-        <Row label="Recommended" value={formatInr(card.recommendedAmount)} />
-        <Row
-          label="Estimated lender range"
-          value={formatInrRange(
-            card.estimatedLenderAmountRange.low,
-            card.estimatedLenderAmountRange.high,
-          )}
-        />
-        <Row
-          label="Expected rate / APR"
-          value={`${formatPercentPoints(card.expectedRate)} / ${formatPercentPoints(card.apr)} APR`}
-        />
-        <Row
-          label="Illustrative fee"
-          value={`${formatPercentPoints(card.processingFeePercent)} (${formatInr(card.processingFeeAmount)})`}
-        />
-        <Row
-          label="Suggested tenure"
-          value={
-            card.suggestedTenureMonths !== null
-              ? `${card.suggestedTenureMonths} months`
-              : '—'
-          }
-        />
-      </div>
+      {dontBorrow ? (
+        <div className="mt-6 border-y border-[var(--line)] py-5">
+          <p className="font-[family-name:var(--font-display)] text-xl text-[var(--danger)]">
+            Do not take a new loan at this time
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--ink-soft)]">
+            Reassess after your existing high-cost debt is under control and
+            income is more stable.
+          </p>
+          {card.nextSteps.length > 0 ? (
+            <ul className="mt-3 space-y-1.5 text-sm text-[var(--ink-soft)]">
+              {card.nextSteps.map((step) => (
+                <li key={step}>· {step}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-6 grid grid-cols-2 gap-4 border-y border-[var(--line)] py-5 sm:grid-cols-4">
+          <HeroStat label="Requested" value={formatInr(card.requestedAmount)} />
+          <HeroStat
+            label="Recommended"
+            value={formatInr(card.recommendedAmount)}
+          />
+          <HeroStat
+            label="Safe EMI"
+            value={`${formatInr(card.emiCeiling)} / mo`}
+          />
+          <HeroStat
+            label={
+              card.rateIndicativeOnly
+                ? 'Fair rate (indicative)'
+                : 'Fair rate'
+            }
+            value={`${formatPercentPoints(card.fairRateRange.low)} – ${formatPercentPoints(card.fairRateRange.high)}`}
+          />
+        </div>
+      )}
+
+      {!dontBorrow ? (
+        <div className="mt-5 grid gap-2 text-sm sm:grid-cols-2">
+          <Row
+            label="Safe borrowing"
+            value={formatInrRange(
+              card.safeAmountRange.low,
+              card.safeAmountRange.high,
+            )}
+          />
+          <Row
+            label="Estimated lender range"
+            value={formatInrRange(
+              card.estimatedLenderAmountRange.low,
+              card.estimatedLenderAmountRange.high,
+            )}
+          />
+          <Row label="APR" value={formatPercentPoints(card.apr)} />
+          <Row
+            label="Negotiation target"
+            value={
+              card.negotiationTargetRate !== null
+                ? `≤ ${formatPercentPoints(card.negotiationTargetRate)}`
+                : '—'
+            }
+          />
+          <Row
+            label="Illustrative fee"
+            value={`${formatPercentPoints(card.processingFeePercent)} (${formatInr(card.processingFeeAmount)})`}
+          />
+          <Row
+            label="Suggested tenure"
+            value={
+              card.suggestedTenureMonths !== null
+                ? `${card.suggestedTenureMonths} months`
+                : '—'
+            }
+          />
+        </div>
+      ) : null}
+
+      {card.rateIndicativeOnly && !dontBorrow ? (
+        <p className="mt-3 text-xs text-[var(--amber)]">
+          Indicative range — {card.confidence} confidence. Do not treat this as
+          an exact negotiable quote.
+        </p>
+      ) : null}
 
       <div className="mt-6">
         <h3 className="text-xs tracking-[0.14em] text-[var(--muted)] uppercase">
-          Why this range
+          Why
         </h3>
         <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[var(--ink-soft)]">
           {card.reasons.slice(0, 3).map((reason) => (
@@ -115,7 +155,7 @@ export function NegotiationCardView({ card }: NegotiationCardViewProps) {
       </div>
 
       <p className="mt-6 text-xs leading-relaxed text-[var(--muted)]">
-        Confidence: {card.confidence.toUpperCase()} — {card.confidenceReason}
+        {card.confidenceReason}
       </p>
     </article>
   )

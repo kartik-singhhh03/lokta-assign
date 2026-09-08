@@ -108,8 +108,13 @@ export interface BorrowerProfile {
   monthlyIncomeHigh: MaybeNumber
   /** Documented annual income (e.g. ITR), INR */
   documentedAnnualIncome: MaybeNumber
-  /** Spouse / co-earner monthly income, INR */
+  /** Spouse / co-earner monthly income, INR (informational until co-applicant). */
   spouseMonthlyIncome: MaybeNumber
+  /**
+   * Only when true is spouse income counted in repayment capacity.
+   * null = unanswered; false = known but not a co-applicant.
+   */
+  spouseIsCoApplicant: boolean | null
 
   employmentType: EmploymentType | null
   incomeStability: IncomeStability | null
@@ -119,13 +124,17 @@ export interface BorrowerProfile {
 
   /** Existing EMI / debt obligations per month in INR */
   existingEmi: MaybeNumber
-  /** Outstanding unsecured debt stock, INR */
+  /** Outstanding unsecured / app-loan debt stock, INR */
   outstandingUnsecuredDebt: MaybeNumber
+  /** Stated that existing debt is high-cost (e.g. 30%+ app loans) */
+  hasHighCostDebt: boolean | null
   /** Monthly essential living expenses in INR (rent, food, utilities, school) */
   monthlyExpenses: MaybeNumber
   dependents: MaybeNumber
   /** Recent missed / bounced EMI */
   recentBouncedEmi: boolean | null
+  /** Spouse currently unemployed / not earning */
+  spouseUnemployed: boolean | null
 
   creditScoreBand: CreditScoreBand | null
   /** Exact score when known — never invent */
@@ -186,16 +195,6 @@ export interface Answer {
   answeredAt: string
 }
 
-export interface BorrowDecision {
-  recommendation: BorrowRecommendation
-  confidence: ConfidenceLevel
-  explanation: Explanation
-  /** Key positive factors surfaced to the borrower */
-  positiveFactors: string[]
-  /** Key risk factors surfaced to the borrower */
-  riskFactors: string[]
-}
-
 /** Sanction vs safe-carry comparison. */
 export interface CapacityAssessment {
   /** Amount a typical lender may sanction given the profile */
@@ -235,6 +234,17 @@ export interface ProductRoutingResult {
   explanation: Explanation
 }
 
+/** Expandable “Why this number?” breakdown for the UI. */
+export interface NumberBreakdown {
+  title: string
+  /** Short one-sentence borrower-facing explanation */
+  oneLiner: string
+  inputsUsed: string[]
+  steps: string[]
+  ruleUsed: string
+  assumptions: string[]
+}
+
 export interface AffordabilityResult {
   applicableFoir: MaybeNumber
   foirLabel: string | null
@@ -242,10 +252,23 @@ export interface AffordabilityResult {
   safeNewEmi: MaybeNumber
   disposableCashFlow: MaybeNumber
   cashFlowConstrainedEmi: MaybeNumber
+  foirBasedNewEmi: MaybeNumber
+  /** Income figure actually used for affordability */
+  incomeUsed: MaybeNumber
+  incomeSource: string | null
+  /** Whether spouse income was included */
+  spouseIncomeIncluded: boolean
+  /** Expenses figure used (may be assumed) */
+  expensesUsed: MaybeNumber
+  expensesWereAssumed: boolean
+  /** Existing EMI used; null when unknown and not invented */
+  existingEmiUsed: MaybeNumber
+  existingEmiWasUnknown: boolean
   status: 'healthy' | 'stretched' | 'stressed' | 'unknown'
   isDistressed: boolean
   confidence: ConfidenceLevel
   explanation: Explanation
+  breakdown: NumberBreakdown
 }
 
 export interface FairRateResult {
@@ -255,6 +278,9 @@ export interface FairRateResult {
   confidence: ConfidenceLevel
   reasons: string[]
   explanation: Explanation
+  breakdown: NumberBreakdown
+  /** True when band is widened due to missing bureau / thin file */
+  indicativeOnly: boolean
 }
 
 export interface AprResult {
@@ -267,20 +293,28 @@ export interface AprResult {
   /** Documents whether exact IRR or approximation was used */
   methodNote: string
   explanation: Explanation
+  breakdown: NumberBreakdown
 }
 
 export interface LenderAmountResult {
   estimatedLenderAmountRange: NumericRange
   confidence: ConfidenceLevel
   explanation: Explanation
+  breakdown: NumberBreakdown
 }
 
 export interface SafeAmountResult {
+  /** Borrower-facing comfortable / safe range (not the mathematical max) */
   safeAmountRange: NumericRange
+  /** Mathematical maximum principal at longest product tenure + best rate in band */
+  mathematicalMaximum: MaybeNumber
   recommendedAmount: MaybeNumber
   confidence: ConfidenceLevel
   explanation: Explanation
+  breakdown: NumberBreakdown
 }
+
+export type StressStatus = 'comfortable' | 'tight' | 'stressed' | 'unknown'
 
 export interface StressTestResult {
   scenarioLabel: string
@@ -293,7 +327,20 @@ export interface StressTestResult {
   baseBuffer: MaybeNumber
   stressedBuffer: MaybeNumber
   stillWithinSafeCeiling: boolean | null
+  status: StressStatus
   explanation: Explanation
+}
+
+export interface BorrowDecision {
+  recommendation: BorrowRecommendation
+  confidence: ConfidenceLevel
+  explanation: Explanation
+  /** Key positive factors surfaced to the borrower */
+  positiveFactors: string[]
+  /** Key risk factors surfaced to the borrower */
+  riskFactors: string[]
+  /** Constructive next steps (especially for DONT_BORROW) */
+  nextSteps: string[]
 }
 
 /**
@@ -303,6 +350,7 @@ export interface StressTestResult {
 export interface NegotiationCard {
   decision: BorrowRecommendation
   product: ProductType
+  purpose: string | null
   requestedAmount: MaybeNumber
   recommendedAmount: MaybeNumber
   safeAmountRange: NumericRange
@@ -314,18 +362,20 @@ export interface NegotiationCard {
   processingFeeAmount: MaybeNumber
   emiCeiling: MaybeNumber
   suggestedTenureMonths: MaybeNumber
-  /** Negotiate at or below this rate */
+  /** Negotiate at or below this rate; null when DONT_BORROW */
   negotiationTargetRate: MaybeNumber
   reasons: string[]
   questionsToAskLender: string[]
   confidence: ConfidenceLevel
   confidenceReason: string
+  rateIndicativeOnly: boolean
   /** Fair rate band the borrower can cite (compat) */
   fairRateBand: RateRange
   maxAcceptableEmi: MaybeNumber
   maxAcceptablePrincipal: MaybeNumber
   talkingPoints: string[]
   watchouts: string[]
+  nextSteps: string[]
   explanation: Explanation
 }
 
@@ -349,7 +399,17 @@ export interface AssessmentResult {
   confidenceReason: string
   unknownFields: (keyof BorrowerProfile)[]
   missingInputsForPrecision: string[]
+  whatWeDontKnow: string[]
   reasons: string[]
+  oneLiners: {
+    decision: string
+    safeEmi: string
+    safeAmount: string
+    rate: string
+    apr: string
+    lenderVsSafe: string
+  }
+  disclaimer: string
   assessedAt: string
 }
 

@@ -1,7 +1,7 @@
 import type { BorrowerProfile } from '../types'
 import { emptyProfile } from '../engine/answersToProfile'
 
-/** Canonical demo borrowers for tests and optional UI presets. */
+/** Canonical demo borrowers — only fields stated in the brief (or explicit nulls). */
 export const DEMO_PRIYA: BorrowerProfile = {
   ...emptyProfile(),
   name: 'Priya',
@@ -37,12 +37,15 @@ export const DEMO_RAVI: BorrowerProfile = {
   monthlyIncomeHigh: 80_000,
   documentedAnnualIncome: 4_20_000,
   spouseMonthlyIncome: 18_000,
+  /** Wife’s income is known but she is not automatically a co-applicant */
+  spouseIsCoApplicant: false,
   employmentType: 'self_employed',
   incomeStability: 'moderate',
   employmentYears: 14,
   employerDescription: 'Kirana store owner',
   existingEmi: 0,
-  monthlyExpenses: 35_000,
+  /** Household expenses not stated in the brief — left unknown (disclosed assumption in engine) */
+  monthlyExpenses: null,
   dependents: 2,
   recentBouncedEmi: false,
   creditScore: null,
@@ -62,18 +65,24 @@ export const DEMO_ANITA: BorrowerProfile = {
   age: 35,
   city: 'Hubballi',
   cityTier: 'tier3',
-  monthlyIncome: 28_000,
+  monthlyIncome: null,
   monthlyIncomeLow: 26_000,
   monthlyIncomeHigh: 30_000,
   employmentType: 'informal',
   incomeStability: 'variable',
   employmentYears: 3,
   employerDescription: 'Delivery rider + tailoring',
-  existingEmi: 8_500,
+  /** Exact EMI not stated in the brief — must stay unknown */
+  existingEmi: null,
   outstandingUnsecuredDebt: 35_000,
-  monthlyExpenses: 22_000,
+  hasHighCostDebt: true,
+  /** Household expenses not stated — left unknown */
+  monthlyExpenses: null,
   dependents: 2,
   recentBouncedEmi: true,
+  spouseUnemployed: true,
+  spouseMonthlyIncome: 0,
+  spouseIsCoApplicant: false,
   creditScore: null,
   creditScoreBand: null,
   hasFormalCreditHistory: true,

@@ -20,15 +20,18 @@ function emptyProfile(): BorrowerProfile {
     monthlyIncomeHigh: null,
     documentedAnnualIncome: null,
     spouseMonthlyIncome: null,
+    spouseIsCoApplicant: null,
     employmentType: null,
     incomeStability: null,
     employmentYears: null,
     employerDescription: null,
     existingEmi: null,
     outstandingUnsecuredDebt: null,
+    hasHighCostDebt: null,
     monthlyExpenses: null,
     dependents: null,
     recentBouncedEmi: null,
+    spouseUnemployed: null,
     creditScoreBand: null,
     creditScore: null,
     hasFormalCreditHistory: null,
@@ -116,7 +119,10 @@ function assignField(
       break
     case 'recentBouncedEmi':
     case 'hasCollateral':
-    case 'hasFormalCreditHistory': {
+    case 'hasFormalCreditHistory':
+    case 'spouseIsCoApplicant':
+    case 'hasHighCostDebt':
+    case 'spouseUnemployed': {
       profile[key] = asBoolean(value)
       break
     }
